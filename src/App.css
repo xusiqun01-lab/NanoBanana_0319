@@ -1,0 +1,412 @@
+/* AI创作工坊 - 深色主题样式 - 参考图配色 */
+
+/* 深色主题配色 - 参考图 */
+:root {
+  --bg-primary: #050505;
+  --bg-secondary: #0a0a0a;
+  --bg-card: #111111;
+  --bg-hover: #1a1a1a;
+  
+  --banana-primary: #F5A623;
+  --banana-primary-dark: #D48A0F;
+  --banana-primary-light: #FFB84D;
+  --banana-glow: rgba(245, 166, 35, 0.25);
+  
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666666;
+  
+  --border-color: #1f1f1f;
+  --border-hover: #2a2a2a;
+  
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
+}
+
+/* 全局样式 */
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  margin: 0;
+  padding: 0;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--banana-primary);
+}
+
+/* 选中文字样式 */
+::selection {
+  background-color: var(--banana-primary);
+  color: #000;
+}
+
+/* 按钮样式 */
+button {
+  transition: all 0.2s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+/* 香蕉主题按钮 - 精致版 */
+.btn-banana {
+  background: linear-gradient(135deg, var(--banana-primary) 0%, var(--banana-primary-dark) 100%);
+  color: #000;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 
+    0 4px 15px var(--banana-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-banana:hover {
+  box-shadow: 
+    0 8px 25px var(--banana-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.btn-banana:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px var(--banana-glow);
+}
+
+/* 香蕉主题按钮 - 描边样式 - 精致版 */
+.btn-banana-outline {
+  background: transparent;
+  color: var(--banana-primary);
+  font-weight: 600;
+  border: 1.5px solid var(--banana-primary);
+  border-radius: 10px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-banana-outline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(245, 166, 35, 0.1), transparent);
+  transition: left 0.5s ease;
+}
+
+.btn-banana-outline:hover {
+  background: rgba(245, 166, 35, 0.08);
+  box-shadow: 0 4px 20px rgba(245, 166, 35, 0.15);
+  transform: translateY(-2px);
+  border-color: var(--banana-primary-light);
+}
+
+.btn-banana-outline:hover::before {
+  left: 100%;
+}
+
+/* 径向渐变背景 */
+.bg-gradient-radial {
+  background: radial-gradient(ellipse at center, var(--tw-gradient-from) 0%, var(--tw-gradient-via) 50%, var(--tw-gradient-to) 100%);
+}
+
+/* 卡片样式 */
+.card-dark {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.card-dark:hover {
+  border-color: var(--border-hover);
+}
+
+/* 输入框样式 */
+input, textarea, select {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--banana-primary);
+  box-shadow: 0 0 0 2px var(--banana-glow);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* 侧边栏导航项动画 - 增强版 */
+.nav-item {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 8px;
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 0;
+  background: linear-gradient(180deg, var(--banana-primary) 0%, var(--banana-primary-dark) 100%);
+  transition: height 0.3s ease;
+  border-radius: 0 2px 2px 0;
+}
+
+.nav-item:hover::before,
+.nav-item.active::before {
+  height: 60%;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(245, 166, 35, 0.12) 0%, rgba(245, 166, 35, 0.03) 50%, transparent 100%);
+  color: var(--banana-primary);
+}
+
+/* 拖拽上传区域 - 增强版 */
+.drag-drop-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(145deg, rgba(10, 10, 10, 0.8) 0%, rgba(17, 17, 17, 0.6) 100%);
+}
+
+.drag-drop-zone:hover {
+  border-color: rgba(245, 166, 35, 0.6);
+  background: rgba(245, 166, 35, 0.04);
+}
+
+.drag-drop-zone.drag-over {
+  border-color: var(--banana-primary);
+  background: rgba(245, 166, 35, 0.1);
+  transform: scale(1.02);
+  box-shadow: 0 0 30px rgba(245, 166, 35, 0.1);
+}
+
+/* 图片预览 */
+.image-preview {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--border-color);
+  transition: all 0.2s ease;
+}
+
+.image-preview:hover {
+  border-color: var(--banana-primary);
+}
+
+/* 比例选择按钮 */
+.ratio-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.ratio-btn:hover {
+  border-color: var(--banana-primary);
+  color: var(--text-primary);
+}
+
+.ratio-btn.active {
+  background: var(--banana-primary);
+  border-color: var(--banana-primary);
+  color: #000;
+}
+
+/* 进度条 */
+.progress-bar {
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  height: 6px;
+}
+
+.progress-bar-fill {
+  background: linear-gradient(90deg, var(--banana-primary) 0%, var(--banana-primary-light) 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  height: 100%;
+}
+
+/* Toast通知 */
+.toast {
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 加载动画 */
+.loading-spinner {
+  border: 3px solid var(--bg-secondary);
+  border-top-color: var(--banana-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 图片加载占位 */
+.image-placeholder {
+  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-hover) 50%, var(--bg-secondary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* 标签样式 */
+.tag {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* 发光效果 */
+.glow-banana {
+  box-shadow: 0 0 30px var(--banana-glow);
+}
+
+/* 香蕉Logo样式 */
+.banana-logo {
+  filter: drop-shadow(0 0 15px var(--banana-glow));
+}
+
+/* 主页卡片样式 - 增强版 */
+.home-card {
+  background: linear-gradient(145deg, rgba(17, 17, 17, 0.9) 0%, rgba(10, 10, 10, 0.95) 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.home-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(245, 166, 35, 0.3), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.home-card:hover {
+  border-color: rgba(245, 166, 35, 0.5);
+  transform: translateY(-6px);
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(245, 166, 35, 0.1);
+}
+
+.home-card:hover::before {
+  opacity: 1;
+}
+
+/* 主页大Logo发光 - 增强版 */
+.home-logo-glow {
+  filter: drop-shadow(0 0 30px rgba(245, 166, 35, 0.5)) drop-shadow(0 0 60px rgba(245, 166, 35, 0.2));
+  animation: logoPulse 3s ease-in-out infinite;
+}
+
+@keyframes logoPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 30px rgba(245, 166, 35, 0.5)) drop-shadow(0 0 60px rgba(245, 166, 35, 0.15));
+  }
+  50% {
+    filter: drop-shadow(0 0 40px rgba(245, 166, 35, 0.6)) drop-shadow(0 0 80px rgba(245, 166, 35, 0.25));
+  }
+}
+
+/* 确保一屏能看全 */
+.main-content {
+  height: 100vh;
+  overflow-y: auto;
+}
+
+/* 紧凑布局 */
+.compact-section {
+  padding: 16px 20px;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 60px;
+  }
+  
+  .sidebar .nav-text {
+    display: none;
+  }
+}
