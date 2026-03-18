@@ -1,15 +1,26 @@
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
+const cors = require('cors');
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// API Key
-const API_KEY = 'sk-JgRCJUhqOQGWZFqwmy0yKtrLCzndPdOuXvg7dYJaQe9Zqb7B';
+// API Key（优先从环境变量读取，否则使用默认值）
+const API_KEY = process.env.API_KEY || 'sk-JgRCJUhqOQGWZFqwmy0yKtrLCzndPdOuXvg7dYJaQe9Zqb7B';
 
-// 上游API地址
+// 上游API地址（注意：不要有多余空格！）
 const TARGET_API = 'https://api.zhenzhen.work';
+
+// 全局CORS中间件
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// 解析JSON请求体
+app.use(express.json());
 
 // 创建代理中间件
 const apiProxy = createProxyMiddleware({
@@ -26,11 +37,6 @@ const apiProxy = createProxyMiddleware({
     console.log(`[Proxy] ${req.method} ${req.url} -> ${TARGET_API}${req.url}`);
   },
   onProxyRes: (proxyRes, req, res) => {
-    // 添加CORS头
-    proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-    proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-    proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
-    
     console.log(`[Proxy Response] ${proxyRes.statusCode} ${req.url}`);
   },
   onError: (err, req, res) => {
@@ -39,31 +45,23 @@ const apiProxy = createProxyMiddleware({
   }
 });
 
-// 使用代理中间件 - 必须使用 app.use 而不是 app.all
+// 使用代理中间件 - 关键：使用 app.use 而不是 app.all
 app.use('/v1', apiProxy);
-
-// 处理OPTIONS预检请求
-app.options('/v1/*', (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.status(200).end();
-});
-
-// 静态文件服务（生产环境）
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../dist')));
-  
-  // 所有其他路由返回index.html
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
-  });
-}
 
 // 健康检查
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// 生产环境静态文件服务
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../dist')));
+  
+  // 所有其他路由返回index.html（支持前端路由）
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+  });
+}
 
 // 启动服务器
 app.listen(PORT, () => {
