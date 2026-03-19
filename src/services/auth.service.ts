@@ -1,6 +1,6 @@
 /**
  * 用户认证服务
- * 对接后端真实用户系统（SQLite + JWT）
+ * 对接后端真实用户系统（PostgreSQL + JWT）
  */
 
 import type { User, LoginCredentials, RegisterData, ApiResponse } from '@/types';
@@ -30,13 +30,10 @@ export class AuthService {
       const data = await response.json();
       
       if (data.success && data.token) {
-        // 保存 JWT token 和用户信息
         this.token = data.token;
         this.currentUser = data.user;
         localStorage.setItem(STORAGE_KEYS.token, data.token);
         localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(data.user));
-        
-        this.logActivity('login', `用户 ${data.user.email} 登录成功`);
         
         return {
           success: true,
@@ -76,8 +73,6 @@ export class AuthService {
         localStorage.setItem(STORAGE_KEYS.token, result.token);
         localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(result.user));
         
-        this.logActivity('register', `新用户 ${result.user.email} 注册成功，角色：${result.user.role}`);
-        
         return {
           success: true,
           data: result.user,
@@ -101,9 +96,6 @@ export class AuthService {
   // 用户登出
   // ============================================
   async logout(): Promise<void> {
-    if (this.currentUser) {
-      this.logActivity('logout', `用户 ${this.currentUser.email} 登出`);
-    }
     this.currentUser = null;
     this.token = null;
     localStorage.removeItem(STORAGE_KEYS.user);
@@ -140,70 +132,18 @@ export class AuthService {
   }
 
   // ============================================
-  // 更新用户信息（仅本地，后端未提供此接口可暂存本地）
+  // 更新用户信息
   // ============================================
   async updateUser(userId: string, updates: Partial<User>): Promise<ApiResponse<User>> {
-    try {
-      if (!this.isAuthenticated()) {
-        return { success: false, error: '未登录' };
-      }
-
-      // 这里可以扩展调用后端 /api/user/update
-      // 目前仅更新本地
-      if (this.currentUser?.id === userId) {
-        this.currentUser = { ...this.currentUser, ...updates };
-        localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(this.currentUser));
-        return { success: true, data: this.currentUser };
-      }
-      
-      return { success: false, error: '无权操作' };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '更新失败',
-      };
+    if (!this.isAuthenticated()) {
+      return { success: false, error: '未登录' };
     }
-  }
-
-  // ============================================
-  // 修改密码（调用后端 API，需补充后端接口）
-  // ============================================
-  async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<ApiResponse<void>> {
-    // 后端需要补充此接口，目前返回提示
-    return {
-      success: false,
-      error: '密码修改功能请等待后端接口更新，或联系管理员',
-    };
-  }
-
-  // ============================================
-  // 获取所有用户（管理员功能，需调用后端 API）
-  // ============================================
-  async getAllUsers(): Promise<ApiResponse<User[]>> {
-    try {
-      if (!this.isAdmin()) {
-        return { success: false, error: '无权限访问' };
-      }
-
-      // 后端需要补充 /api/admin/users 接口
-      // 目前返回空数组
-      return { success: true, data: [] };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '获取失败',
-      };
+    if (this.currentUser?.id === userId) {
+      this.currentUser = { ...this.currentUser, ...updates };
+      localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(this.currentUser));
+      return { success: true, data: this.currentUser };
     }
-  }
-
-  // ============================================
-  // 删除用户（管理员功能）
-  // ============================================
-  async deleteUser(userId: string): Promise<ApiResponse<void>> {
-    return {
-      success: false,
-      error: '用户管理功能请等待后端接口更新',
-    };
+    return { success: false, error: '无权操作' };
   }
 
   // ============================================
@@ -222,25 +162,6 @@ export class AuthService {
         this.currentUser = null;
       }
     }
-  }
-
-  // ============================================
-  // 私有方法：记录活动日志
-  // ============================================
-  private logActivity(action: string, message: string): void {
-    const logs = JSON.parse(localStorage.getItem(STORAGE_KEYS.logs) || '[]');
-    logs.push({
-      id: `log-${Date.now()}`,
-      level: 'info',
-      message: `${action}: ${message}`,
-      userId: this.currentUser?.id,
-      timestamp: new Date().toISOString(),
-      module: 'auth',
-    });
-    if (logs.length > 1000) {
-      logs.shift();
-    }
-    localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(logs));
   }
 }
 

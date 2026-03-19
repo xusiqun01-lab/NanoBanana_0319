@@ -4,7 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -16,34 +16,50 @@ if (!JWT_SECRET) {
 }
 
 // ============================================
-// 数据库初始化
+// PostgreSQL 数据库连接（Render 免费 PostgreSQL）
 // ============================================
-const db = new sqlite3.Database('./database.sqlite');
-
-db.serialize(() => {
-  // 用户表
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT DEFAULT 'user',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-  
-  // 图库记录表（30张限制）
-  db.run(`CREATE TABLE IF NOT EXISTS gallery (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    image_url TEXT NOT NULL,
-    prompt TEXT,
-    type TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  )`);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false // Render 免费 PostgreSQL 需要此设置
+  }
 });
 
+// 初始化数据库表
+async function initDB() {
+  try {
+    // 用户表
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        role VARCHAR(20) DEFAULT 'user',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // 图库记录表（30张限制由应用层控制）
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS gallery (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        image_url TEXT NOT NULL,
+        prompt TEXT,
+        type VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    console.log('✅ PostgreSQL 数据库表初始化成功');
+  } catch (err) {
+    console.error('❌ 数据库初始化失败:', err);
+    process.exit(1);
+  }
+}
+
 // ============================================
-// 两个 API 平台的配置（仅 baseURL，不含密钥）
+// API 平台配置（不含密钥）
 // ============================================
 const API_PROVIDERS = {
   zhenzhen: {
@@ -86,7 +102,7 @@ const authenticateToken = (req, res, next) => {
 };
 
 // ============================================
-// 用户注册 API
+// 用户注册 API（使用 PostgreSQL）
 // ============================================
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -97,78 +113,69 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     // 检查用户数量，第一个注册的是管理员
-    const count = await new Promise((resolve, reject) => {
-      db.get('SELECT COUNT(*) as count FROM users', (err, row) => {
-        if (err) reject(err);
-        else resolve(row.count);
-      });
-    });
-
+    const countResult = await pool.query('SELECT COUNT(*) FROM users');
+    const count = parseInt(countResult.rows[0].count);
     const role = count === 0 ? 'admin' : 'user';
+    
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    db.run(
-      'INSERT INTO users (email, password, role) VALUES (?, ?, ?)',
-      [email, hashedPassword, role],
-      function(err) {
-        if (err) {
-          if (err.message.includes('UNIQUE constraint failed')) {
-            return res.status(400).json({ error: '邮箱已注册' });
-          }
-          throw err;
-        }
-        
-        const token = jwt.sign(
-          { userId: this.lastID, email, role },
-          JWT_SECRET,
-          { expiresIn: '7d' }
-        );
-        
-        res.json({
-          success: true,
-          token,
-          user: { id: this.lastID, email, role }
-        });
-      }
+    const result = await pool.query(
+      'INSERT INTO users (email, password, role) VALUES ($1, $2, $3) RETURNING id, email, role, created_at',
+      [email, hashedPassword, role]
     );
+    
+    const user = result.rows[0];
+    
+    const token = jwt.sign(
+      { userId: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    
+    res.json({
+      success: true,
+      token,
+      user: { id: user.id, email: user.email, role: user.role }
+    });
   } catch (error) {
     console.error('注册错误:', error);
+    if (error.code === '23505') { // PostgreSQL 唯一约束违反
+      return res.status(400).json({ error: '邮箱已注册' });
+    }
     res.status(500).json({ error: '注册失败' });
   }
 });
 
 // ============================================
-// 用户登录 API
+// 用户登录 API（使用 PostgreSQL）
 // ============================================
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
-      if (err) {
-        return res.status(500).json({ error: '服务器错误' });
-      }
-      
-      if (!user) {
-        return res.status(401).json({ error: '邮箱或密码错误' });
-      }
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: '邮箱或密码错误' });
+    }
 
-      const validPassword = await bcrypt.compare(password, user.password);
-      if (!validPassword) {
-        return res.status(401).json({ error: '邮箱或密码错误' });
-      }
+    const user = result.rows[0];
+    const validPassword = await bcrypt.compare(password, user.password);
+    
+    if (!validPassword) {
+      return res.status(401).json({ error: '邮箱或密码错误' });
+    }
 
-      const token = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
+    const token = jwt.sign(
+      { userId: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
-      res.json({
-        success: true,
-        token,
-        user: { id: user.id, email: user.email, role: user.role }
-      });
+    res.json({
+      success: true,
+      token,
+      user: { id: user.id, email: user.email, role: user.role }
     });
   } catch (error) {
     console.error('登录错误:', error);
@@ -177,67 +184,70 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ============================================
-// 图库保存 API（30张限制）
+// 图库保存 API（30张限制 + PostgreSQL）
 // ============================================
-app.post('/api/gallery/save', authenticateToken, (req, res) => {
-  const { imageUrl, prompt, type } = req.body;
-  const userId = req.user.userId;
+app.post('/api/gallery/save', authenticateToken, async (req, res) => {
+  try {
+    const { imageUrl, prompt, type } = req.body;
+    const userId = req.user.userId;
 
-  // 先删除该用户最老的记录（如果超过30张）
-  db.run(
-    `DELETE FROM gallery WHERE id IN (
-      SELECT id FROM gallery 
-      WHERE user_id = ? 
-      ORDER BY created_at ASC 
-      LIMIT (SELECT MAX(0, COUNT(*) - 29) FROM gallery WHERE user_id = ?)
-    )`,
-    [userId, userId],
-    (err) => {
-      if (err) {
-        console.error('清理图库失败:', err);
-      }
-      
-      // 插入新记录
-      db.run(
-        'INSERT INTO gallery (user_id, image_url, prompt, type) VALUES (?, ?, ?, ?)',
-        [userId, imageUrl, prompt, type],
-        function(err) {
-          if (err) {
-            return res.status(500).json({ error: '保存失败' });
-          }
-          res.json({ success: true, id: this.lastID });
-        }
-      );
+    // 检查当前图库数量
+    const countResult = await pool.query(
+      'SELECT COUNT(*) FROM gallery WHERE user_id = $1',
+      [userId]
+    );
+    const count = parseInt(countResult.rows[0].count);
+
+    // 如果超过30张，删除最老的记录
+    if (count >= 30) {
+      await pool.query(`
+        DELETE FROM gallery 
+        WHERE id = (
+          SELECT id FROM gallery 
+          WHERE user_id = $1 
+          ORDER BY created_at ASC 
+          LIMIT 1
+        )
+      `, [userId]);
     }
-  );
+
+    // 插入新记录
+    const result = await pool.query(
+      'INSERT INTO gallery (user_id, image_url, prompt, type) VALUES ($1, $2, $3, $4) RETURNING id',
+      [userId, imageUrl, prompt, type]
+    );
+
+    res.json({ success: true, id: result.rows[0].id });
+  } catch (error) {
+    console.error('保存图库失败:', error);
+    res.status(500).json({ error: '保存失败' });
+  }
 });
 
 // ============================================
-// 获取图库 API
+// 获取图库 API（使用 PostgreSQL）
 // ============================================
-app.get('/api/gallery', authenticateToken, (req, res) => {
-  const userId = req.user.userId;
-  
-  db.all(
-    'SELECT * FROM gallery WHERE user_id = ? ORDER BY created_at DESC LIMIT 30',
-    [userId],
-    (err, rows) => {
-      if (err) {
-        return res.status(500).json({ error: '获取失败' });
-      }
-      res.json({ success: true, data: rows });
-    }
-  );
+app.get('/api/gallery', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    const result = await pool.query(
+      'SELECT * FROM gallery WHERE user_id = $1 ORDER BY created_at DESC LIMIT 30',
+      [userId]
+    );
+    
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('获取图库失败:', error);
+    res.status(500).json({ error: '获取失败' });
+  }
 });
 
 // ============================================
-// 动态代理 - 透传用户密钥（关键修复）
+// 动态代理（透传用户密钥）
 // ============================================
 app.use('/v1', (req, res, next) => {
-  // 从请求头获取平台选择
   const provider = req.headers['x-provider'] || 'zhenzhen';
-  
-  // 从请求头获取用户的 API Key（关键！）
   const authHeader = req.headers['authorization'];
   
   if (!authHeader) {
@@ -252,18 +262,14 @@ app.use('/v1', (req, res, next) => {
   }
   
   console.log(`[${config.name}] ${req.method} ${req.url}`);
-  console.log(`[Auth] 使用用户提供的 API Key: ${authHeader.substring(0, 20)}...`);
   
   const proxy = createProxyMiddleware({
     target: config.baseURL,
     changeOrigin: true,
     pathRewrite: { '^/v1': '/v1' },
     onProxyReq: (proxyReq, req, res) => {
-      // ✅ 关键修复：透传用户的 Authorization，不使用服务器硬编码密钥
       proxyReq.setHeader('Authorization', authHeader);
       proxyReq.setHeader('Content-Type', 'application/json');
-      
-      // 如果用户传了 X-Provider，也透传
       if (req.headers['x-provider']) {
         proxyReq.setHeader('X-Provider', req.headers['x-provider']);
       }
@@ -298,9 +304,15 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 贞贞 AI: ${API_PROVIDERS.zhenzhen.baseURL}`);
-  console.log(`📡 SillyDream: ${API_PROVIDERS.sillydream.baseURL}`);
-  console.log(`⚠️  注意：服务器不再使用硬编码 API Key，每个用户必须使用自己的密钥`);
+// 启动服务器（先初始化数据库）
+initDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🐘 PostgreSQL 数据库已连接`);
+    console.log(`📡 贞贞 AI: ${API_PROVIDERS.zhenzhen.baseURL}`);
+    console.log(`📡 SillyDream: ${API_PROVIDERS.sillydream.baseURL}`);
+  });
+}).catch(err => {
+  console.error('启动失败:', err);
+  process.exit(1);
 });
