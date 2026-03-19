@@ -244,7 +244,7 @@ app.get('/api/gallery', authenticateToken, async (req, res) => {
 });
 
 // ============================================
-// 动态代理（透传用户密钥）
+// 动态代理（透传用户密钥）- 修复版
 // ============================================
 app.use('/v1', (req, res, next) => {
   const provider = req.headers['x-provider'] || 'zhenzhen';
@@ -276,12 +276,20 @@ app.use('/v1', (req, res, next) => {
     },
     onError: (err, req, res) => {
       console.error(`[${config.name} Error]`, err.message);
-      res.status(500).json({ 
-        error: 'Proxy error', 
-        provider: config.name, 
-        message: err.message 
-      });
-    }
+      // 修复：检查响应是否已发送，避免重复发送
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: 'Proxy error', 
+          provider: config.name, 
+          message: err.message 
+        });
+      }
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // 正常响应处理
+    },
+    // 修复：禁用自处理错误，让 Express 处理
+    selfHandleResponse: false
   });
   
   proxy(req, res, next);
@@ -296,11 +304,31 @@ app.get('/health', (req, res) => {
   });
 });
 
-// 生产环境静态文件
+// ============================================
+// 生产环境静态文件 - 修复版
+// ============================================
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../dist')));
+  
+  // 修复：必须在 API 路由之后，且检查响应状态
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
+    // 修复1：如果响应已发送，不再发送
+    if (res.headersSent) {
+      return;
+    }
+    
+    // 修复2：跳过 API 和代理请求
+    if (req.path.startsWith('/api') || req.path.startsWith('/v1')) {
+      return res.status(404).json({ error: 'API endpoint not found' });
+    }
+    
+    // 修复3：发送文件前再次检查
+    const indexPath = path.join(__dirname, '../dist/index.html');
+    res.sendFile(indexPath, (err) => {
+      if (err && !res.headersSent) {
+        res.status(500).send('Error loading page');
+      }
+    });
   });
 }
 
