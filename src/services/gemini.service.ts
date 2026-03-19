@@ -1,7 +1,6 @@
 /**
  * Gemini 3 Pro API 服务
  * 处理图片生成相关的API调用
- * 注意：所有API请求通过相对路径，由后端代理转发
  */
 
 import axios from 'axios';
@@ -13,7 +12,7 @@ import type {
   ApiResponse 
 } from '@/types';
 import { getResolutionDimensions } from '@/config/app.config';
-import { apiConfigService } from '@/services/apiConfig.service'; // 引入配置服务
+import { apiConfigService } from '@/services/apiConfig.service';
 
 // ============================================
 // Gemini API 客户端类
@@ -21,15 +20,19 @@ import { apiConfigService } from '@/services/apiConfig.service'; // 引入配置
 export class GeminiApiClient {
   private client: AxiosInstance;
   private provider: string;
+  private apiKey: string;
 
-  constructor(_apiKey: string, provider: string = 'zhenzhen', baseUrl: string = '/v1') {
+  constructor(apiKey: string, provider: string = 'zhenzhen', baseUrl: string = '/v1') {
     this.provider = provider;
+    this.apiKey = apiKey;
     
+    // ✅ 关键修复：在请求头中添加用户的 API Key
     this.client = axios.create({
       baseURL: baseUrl,
       headers: {
         'Content-Type': 'application/json',
-        'X-Provider': provider, // ← 关键：传递选择的平台给后端
+        'X-Provider': provider,
+        'Authorization': `Bearer ${apiKey}`, // ← 关键：传递用户的个人 API Key
       },
       timeout: 300000,
     });
@@ -54,9 +57,9 @@ export class GeminiApiClient {
       console.log(`[${this.provider}] Sending text-to-image request:`, {
         prompt: params.prompt.substring(0, 50) + '...',
         provider: this.provider,
+        hasApiKey: !!this.apiKey, // 确认有密钥
       });
 
-      // 调用 Gemini 3 Pro API
       const response = await this.client.post('/images/generations', {
         model: 'gemini-3-pro',
         prompt: params.prompt,
@@ -173,7 +176,7 @@ export class GeminiApiClient {
       
       switch (status) {
         case 401:
-          return new Error('API密钥无效或已过期');
+          return new Error('API密钥无效或已过期，请检查设置中的API配置');
         case 429:
           return new Error('请求过于频繁');
         case 504:
@@ -205,11 +208,15 @@ export function createGeminiClient(): GeminiApiClient {
   // 从配置服务获取当前激活的配置
   const activeConfig = apiConfigService.getActiveConfig('image');
   
-  // 如果有激活配置，使用对应的provider，否则默认贞贞
-  const provider = activeConfig?.providerId || 'zhenzhen';
-  const apiKey = activeConfig?.apiKey || '';
+  // 如果没有配置，抛出错误提示用户
+  if (!activeConfig || !activeConfig.apiKey) {
+    throw new Error('未配置API密钥，请先在"设置 > API配置"中添加您的API密钥');
+  }
   
-  console.log(`Creating Gemini client for provider: ${provider}`);
+  const provider = activeConfig.providerId || 'zhenzhen';
+  const apiKey = activeConfig.apiKey;
+  
+  console.log(`Creating Gemini client for provider: ${provider}, API Key: ${apiKey.substring(0, 10)}...`);
   
   return new GeminiApiClient(apiKey, provider, '/v1');
 }
