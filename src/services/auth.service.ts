@@ -1,163 +1,98 @@
 /**
  * 用户认证服务
- * 处理用户登录、注册、权限管理等
+ * 对接后端真实用户系统（SQLite + JWT）
  */
 
 import type { User, LoginCredentials, RegisterData, ApiResponse } from '@/types';
-import { SYSTEM_CONFIG, STORAGE_KEYS } from '@/config/app.config';
+import { STORAGE_KEYS } from '@/config/app.config';
 
-// ============================================
-// 模拟用户数据库（实际项目中应使用后端数据库）
-// ============================================
-interface StoredUser extends User {
-  password: string;
-}
+const API_URL = '/api/auth';
 
-// 初始化管理员账户
-function initAdminUser(): void {
-  const users = getStoredUsers();
-  const adminExists = users.some(u => u.role === 'admin');
-  
-  if (!adminExists) {
-    const adminUser: StoredUser = {
-      id: 'admin-001',
-      email: SYSTEM_CONFIG.admin.email,
-      name: '管理员',
-      role: 'admin',
-      password: 'admin123', // 首次登录后应修改
-      createdAt: new Date().toISOString(),
-      lastLoginAt: undefined,
-    };
-    users.push(adminUser);
-    localStorage.setItem(STORAGE_KEYS.user + '_db', JSON.stringify(users));
-    console.log('Admin user initialized');
-  }
-}
-
-// 获取存储的用户列表
-function getStoredUsers(): StoredUser[] {
-  const data = localStorage.getItem(STORAGE_KEYS.user + '_db');
-  return data ? JSON.parse(data) : [];
-}
-
-// 保存用户列表
-function saveStoredUsers(users: StoredUser[]): void {
-  localStorage.setItem(STORAGE_KEYS.user + '_db', JSON.stringify(users));
-}
-
-// ============================================
-// 认证服务类
-// ============================================
 export class AuthService {
   private currentUser: User | null = null;
+  private token: string | null = null;
 
   constructor() {
-    // 初始化时尝试恢复会话
     this.restoreSession();
-    // 初始化管理员账户
-    initAdminUser();
   }
 
   // ============================================
-  // 用户登录
+  // 用户登录（调用后端 API）
   // ============================================
   async login(credentials: LoginCredentials): Promise<ApiResponse<User>> {
     try {
-      // 模拟网络延迟
-      await this.simulateDelay(500);
+      const response = await fetch(`${API_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credentials),
+      });
 
-      const users = getStoredUsers();
-      const user = users.find(u => u.email === credentials.email);
-
-      if (!user) {
+      const data = await response.json();
+      
+      if (data.success && data.token) {
+        // 保存 JWT token 和用户信息
+        this.token = data.token;
+        this.currentUser = data.user;
+        localStorage.setItem(STORAGE_KEYS.token, data.token);
+        localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(data.user));
+        
+        this.logActivity('login', `用户 ${data.user.email} 登录成功`);
+        
         return {
-          success: false,
-          error: '用户不存在',
+          success: true,
+          data: data.user,
+          message: '登录成功',
         };
       }
-
-      if (user.password !== credentials.password) {
-        return {
-          success: false,
-          error: '密码错误',
-        };
-      }
-
-      // 更新最后登录时间
-      user.lastLoginAt = new Date().toISOString();
-      saveStoredUsers(users);
-
-      // 创建会话（不包含密码）
-      const { password, ...userWithoutPassword } = user;
-      this.currentUser = userWithoutPassword;
-      this.saveSession(userWithoutPassword);
-
-      // 记录日志
-      this.logActivity('login', `用户 ${user.email} 登录成功`);
-
+      
       return {
-        success: true,
-        data: userWithoutPassword,
-        message: '登录成功',
+        success: false,
+        error: data.error || '登录失败',
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '登录失败',
+        error: error instanceof Error ? error.message : '网络错误，无法连接服务器',
       };
     }
   }
 
   // ============================================
-  // 用户注册
+  // 用户注册（调用后端 API）
   // ============================================
   async register(data: RegisterData): Promise<ApiResponse<User>> {
     try {
-      await this.simulateDelay(500);
+      const response = await fetch(`${API_URL}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
 
-      const users = getStoredUsers();
-
-      // 检查邮箱是否已存在
-      if (users.some(u => u.email === data.email)) {
+      const result = await response.json();
+      
+      if (result.success && result.token) {
+        this.token = result.token;
+        this.currentUser = result.user;
+        localStorage.setItem(STORAGE_KEYS.token, result.token);
+        localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(result.user));
+        
+        this.logActivity('register', `新用户 ${result.user.email} 注册成功，角色：${result.user.role}`);
+        
         return {
-          success: false,
-          error: '该邮箱已被注册',
+          success: true,
+          data: result.user,
+          message: `注册成功，您是${result.user.role === 'admin' ? '管理员' : '普通用户'}`,
         };
       }
-
-      // 检查是否已存在管理员（防止普通用户注册为管理员）
-      const isFirstUser = users.length === 0;
-
-      // 创建新用户
-      const newUser: StoredUser = {
-        id: `user-${Date.now()}`,
-        email: data.email,
-        name: data.name,
-        role: isFirstUser ? 'admin' : 'user', // 第一个用户为管理员
-        password: data.password,
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-      };
-
-      users.push(newUser);
-      saveStoredUsers(users);
-
-      // 创建会话
-      const { password, ...userWithoutPassword } = newUser;
-      this.currentUser = userWithoutPassword;
-      this.saveSession(userWithoutPassword);
-
-      this.logActivity('register', `新用户 ${newUser.email} 注册成功`);
-
+      
       return {
-        success: true,
-        data: userWithoutPassword,
-        message: '注册成功',
+        success: false,
+        error: result.error || '注册失败',
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '注册失败',
+        error: error instanceof Error ? error.message : '网络错误，无法连接服务器',
       };
     }
   }
@@ -170,8 +105,10 @@ export class AuthService {
       this.logActivity('logout', `用户 ${this.currentUser.email} 登出`);
     }
     this.currentUser = null;
+    this.token = null;
     localStorage.removeItem(STORAGE_KEYS.user);
     localStorage.removeItem(STORAGE_KEYS.token);
+    window.location.href = '/login';
   }
 
   // ============================================
@@ -182,10 +119,17 @@ export class AuthService {
   }
 
   // ============================================
+  // 获取 JWT Token（用于请求后端 API）
+  // ============================================
+  getToken(): string | null {
+    return this.token;
+  }
+
+  // ============================================
   // 检查是否已登录
   // ============================================
   isAuthenticated(): boolean {
-    return this.currentUser !== null;
+    return this.token !== null && this.currentUser !== null;
   }
 
   // ============================================
@@ -196,41 +140,23 @@ export class AuthService {
   }
 
   // ============================================
-  // 更新用户信息
+  // 更新用户信息（仅本地，后端未提供此接口可暂存本地）
   // ============================================
   async updateUser(userId: string, updates: Partial<User>): Promise<ApiResponse<User>> {
     try {
-      await this.simulateDelay(300);
-
-      const users = getStoredUsers();
-      const userIndex = users.findIndex(u => u.id === userId);
-
-      if (userIndex === -1) {
-        return {
-          success: false,
-          error: '用户不存在',
-        };
+      if (!this.isAuthenticated()) {
+        return { success: false, error: '未登录' };
       }
 
-      // 不允许通过此方法修改密码和角色
-      const { password, role, ...safeUpdates } = updates as any;
-
-      users[userIndex] = { ...users[userIndex], ...safeUpdates };
-      saveStoredUsers(users);
-
-      // 如果更新的是当前用户，更新会话
+      // 这里可以扩展调用后端 /api/user/update
+      // 目前仅更新本地
       if (this.currentUser?.id === userId) {
-        const { password, ...updatedUser } = users[userIndex];
-        this.currentUser = updatedUser;
-        this.saveSession(updatedUser);
+        this.currentUser = { ...this.currentUser, ...updates };
+        localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(this.currentUser));
+        return { success: true, data: this.currentUser };
       }
-
-      this.logActivity('update_user', `更新用户 ${userId} 信息`);
-
-      return {
-        success: true,
-        data: users[userIndex],
-      };
+      
+      return { success: false, error: '无权操作' };
     } catch (error) {
       return {
         success: false,
@@ -240,67 +166,28 @@ export class AuthService {
   }
 
   // ============================================
-  // 修改密码
+  // 修改密码（调用后端 API，需补充后端接口）
   // ============================================
   async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<ApiResponse<void>> {
-    try {
-      await this.simulateDelay(300);
-
-      const users = getStoredUsers();
-      const user = users.find(u => u.id === userId);
-
-      if (!user) {
-        return {
-          success: false,
-          error: '用户不存在',
-        };
-      }
-
-      if (user.password !== oldPassword) {
-        return {
-          success: false,
-          error: '原密码错误',
-        };
-      }
-
-      user.password = newPassword;
-      saveStoredUsers(users);
-
-      this.logActivity('change_password', `用户 ${userId} 修改密码`);
-
-      return {
-        success: true,
-        message: '密码修改成功',
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '修改失败',
-      };
-    }
+    // 后端需要补充此接口，目前返回提示
+    return {
+      success: false,
+      error: '密码修改功能请等待后端接口更新，或联系管理员',
+    };
   }
 
   // ============================================
-  // 获取所有用户（管理员功能）
+  // 获取所有用户（管理员功能，需调用后端 API）
   // ============================================
   async getAllUsers(): Promise<ApiResponse<User[]>> {
     try {
       if (!this.isAdmin()) {
-        return {
-          success: false,
-          error: '无权限访问',
-        };
+        return { success: false, error: '无权限访问' };
       }
 
-      await this.simulateDelay(300);
-
-      const users = getStoredUsers();
-      const usersWithoutPassword = users.map(({ password, ...user }) => user);
-
-      return {
-        success: true,
-        data: usersWithoutPassword,
-      };
+      // 后端需要补充 /api/admin/users 接口
+      // 目前返回空数组
+      return { success: true, data: [] };
     } catch (error) {
       return {
         success: false,
@@ -313,73 +200,28 @@ export class AuthService {
   // 删除用户（管理员功能）
   // ============================================
   async deleteUser(userId: string): Promise<ApiResponse<void>> {
-    try {
-      if (!this.isAdmin()) {
-        return {
-          success: false,
-          error: '无权限操作',
-        };
-      }
-
-      await this.simulateDelay(300);
-
-      const users = getStoredUsers();
-      const filteredUsers = users.filter(u => u.id !== userId);
-
-      if (filteredUsers.length === users.length) {
-        return {
-          success: false,
-          error: '用户不存在',
-        };
-      }
-
-      saveStoredUsers(filteredUsers);
-
-      this.logActivity('delete_user', `删除用户 ${userId}`);
-
-      return {
-        success: true,
-        message: '删除成功',
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '删除失败',
-      };
-    }
-  }
-
-  // ============================================
-  // 私有方法：保存会话
-  // ============================================
-  private saveSession(user: User): void {
-    localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
-    // 生成简单的token（实际项目应使用JWT）
-    const token = `token-${user.id}-${Date.now()}`;
-    localStorage.setItem(STORAGE_KEYS.token, token);
+    return {
+      success: false,
+      error: '用户管理功能请等待后端接口更新',
+    };
   }
 
   // ============================================
   // 私有方法：恢复会话
   // ============================================
   private restoreSession(): void {
-    const userData = localStorage.getItem(STORAGE_KEYS.user);
     const token = localStorage.getItem(STORAGE_KEYS.token);
+    const userData = localStorage.getItem(STORAGE_KEYS.user);
 
-    if (userData && token) {
+    if (token && userData) {
       try {
+        this.token = token;
         this.currentUser = JSON.parse(userData);
       } catch {
+        this.token = null;
         this.currentUser = null;
       }
     }
-  }
-
-  // ============================================
-  // 私有方法：模拟延迟
-  // ============================================
-  private simulateDelay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // ============================================
@@ -395,7 +237,6 @@ export class AuthService {
       timestamp: new Date().toISOString(),
       module: 'auth',
     });
-    // 限制日志数量
     if (logs.length > 1000) {
       logs.shift();
     }
@@ -403,7 +244,5 @@ export class AuthService {
   }
 }
 
-// ============================================
 // 单例实例
-// ============================================
 export const authService = new AuthService();
