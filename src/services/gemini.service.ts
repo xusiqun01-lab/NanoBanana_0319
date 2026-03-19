@@ -10,24 +10,28 @@ import type {
   TextToImageParams, 
   ImageToImageParams, 
   GeneratedImage,
-  GeminiImageRequest,
   ApiResponse 
 } from '@/types';
 import { getResolutionDimensions } from '@/config/app.config';
+import { apiConfigService } from '@/services/apiConfig.service'; // 引入配置服务
 
 // ============================================
 // Gemini API 客户端类
 // ============================================
 export class GeminiApiClient {
   private client: AxiosInstance;
+  private provider: string;
 
-  constructor(_apiKey: string, baseUrl: string = '/v1') {
+  constructor(_apiKey: string, provider: string = 'zhenzhen', baseUrl: string = '/v1') {
+    this.provider = provider;
+    
     this.client = axios.create({
-      baseURL: baseUrl, // 使用相对路径，由后端代理转发
+      baseURL: baseUrl,
       headers: {
         'Content-Type': 'application/json',
+        'X-Provider': provider, // ← 关键：传递选择的平台给后端
       },
-      timeout: 300000, // 5分钟超时（生图可能需要较长时间）
+      timeout: 300000,
     });
 
     // 响应拦截器
@@ -47,19 +51,12 @@ export class GeminiApiClient {
     try {
       const dimensions = getResolutionDimensions(params.resolution, params.ratio);
       
-      const requestBody: GeminiImageRequest = {
-        prompt: params.prompt,
-        width: dimensions.width,
-        height: dimensions.height,
-        seed: Math.floor(Math.random() * 1000000),
-      };
-
-      console.log('Sending text-to-image request:', {
-        ...requestBody,
-        prompt: requestBody.prompt.substring(0, 50) + '...',
+      console.log(`[${this.provider}] Sending text-to-image request:`, {
+        prompt: params.prompt.substring(0, 50) + '...',
+        provider: this.provider,
       });
 
-      // 调用 Gemini 3 Pro API - 使用相对路径
+      // 调用 Gemini 3 Pro API
       const response = await this.client.post('/images/generations', {
         model: 'gemini-3-pro',
         prompt: params.prompt,
@@ -106,7 +103,6 @@ export class GeminiApiClient {
     try {
       const dimensions = getResolutionDimensions(params.resolution, params.ratio);
       
-      // 构建请求体
       const requestBody: any = {
         model: 'gemini-3-pro',
         prompt: params.prompt,
@@ -116,17 +112,12 @@ export class GeminiApiClient {
         quality: params.resolution === '4K' ? 'hd' : 'standard',
       };
 
-      // 如果有参考图片，添加到请求中
       if (params.referenceImages && params.referenceImages.length > 0) {
         requestBody.images = params.referenceImages;
         requestBody.strength = params.strength || 0.7;
       }
 
-      console.log('Sending image-to-image request:', {
-        ...requestBody,
-        prompt: requestBody.prompt.substring(0, 50) + '...',
-        images: requestBody.images ? `${requestBody.images.length} images` : 'none',
-      });
+      console.log(`[${this.provider}] Sending image-to-image request`);
 
       const response = await this.client.post('/images/edits', requestBody);
 
@@ -161,22 +152,14 @@ export class GeminiApiClient {
   }
 
   // ============================================
-  // 验证API密钥是否有效
+  // 验证API密钥
   // ============================================
   async validateApiKey(): Promise<ApiResponse<boolean>> {
     try {
-      // 发送一个简单的请求来验证API密钥
       await this.client.get('/models');
-      return {
-        success: true,
-        data: true,
-      };
+      return { success: true, data: true };
     } catch (error) {
-      return {
-        success: false,
-        error: 'Invalid API key',
-        data: false,
-      };
+      return { success: false, error: 'Invalid API key', data: false };
     }
   }
 
@@ -190,18 +173,18 @@ export class GeminiApiClient {
       
       switch (status) {
         case 401:
-          return new Error('API密钥无效或已过期，请检查您的API配置');
+          return new Error('API密钥无效或已过期');
         case 429:
-          return new Error('请求过于频繁，请稍后再试');
-        case 500:
-          return new Error('服务器错误，请稍后再试');
+          return new Error('请求过于频繁');
+        case 504:
+          return new Error('API服务器连接超时，请检查网络或切换API供应商');
         default:
           return new Error(data?.error?.message || `请求失败 (${status})`);
       }
     }
     
     if (error.code === 'ECONNABORTED') {
-      return new Error('请求超时，请检查网络连接或稍后重试');
+      return new Error('请求超时');
     }
     
     return new Error(error.message || '网络错误');
@@ -216,71 +199,17 @@ export class GeminiApiClient {
 }
 
 // ============================================
-// 视频生成服务（即梦/可灵）
+// 创建客户端实例的工厂函数（关键修复）
 // ============================================
-export class VideoApiClient {
-  private client: AxiosInstance;
-  private provider: 'jimeng' | 'kling';
-
-  constructor(_apiKey: string, provider: 'jimeng' | 'kling', baseUrl?: string) {
-    this.provider = provider;
-    
-    // 使用相对路径，由后端代理转发
-    const finalBaseUrl = baseUrl || '/v1';
-
-    this.client = axios.create({
-      baseURL: finalBaseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 300000,
-    });
-  }
-
-  async generateVideo(params: {
-    prompt: string;
-    referenceImage: string;
-    width: number;
-    height: number;
-    duration: number;
-  }): Promise<ApiResponse<any>> {
-    try {
-      const endpoint = this.provider === 'jimeng' 
-        ? '/videos/generations' 
-        : '/videos';
-
-      const response = await this.client.post(endpoint, {
-        prompt: params.prompt,
-        image: params.referenceImage,
-        width: params.width,
-        height: params.height,
-        duration: params.duration,
-      });
-
-      return {
-        success: true,
-        data: response.data,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
-}
-
-// ============================================
-// 创建客户端实例的工厂函数
-// ============================================
-export function createGeminiClient(apiKey: string, baseUrl?: string): GeminiApiClient {
-  return new GeminiApiClient(apiKey, baseUrl);
-}
-
-export function createVideoClient(
-  apiKey: string, 
-  provider: 'jimeng' | 'kling',
-  baseUrl?: string
-): VideoApiClient {
-  return new VideoApiClient(apiKey, provider, baseUrl);
+export function createGeminiClient(): GeminiApiClient {
+  // 从配置服务获取当前激活的配置
+  const activeConfig = apiConfigService.getActiveConfig('image');
+  
+  // 如果有激活配置，使用对应的provider，否则默认贞贞
+  const provider = activeConfig?.providerId || 'zhenzhen';
+  const apiKey = activeConfig?.apiKey || '';
+  
+  console.log(`Creating Gemini client for provider: ${provider}`);
+  
+  return new GeminiApiClient(apiKey, provider, '/v1');
 }

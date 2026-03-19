@@ -6,66 +6,84 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// API Key（优先从环境变量读取，否则使用默认值）
-const API_KEY = process.env.API_KEY || 'sk-JgRCJUhqOQGWZFqwmy0yKtrLCzndPdOuXvg7dYJaQe9Zqb7B';
+// ============================================
+// 两个 API 平台的配置
+// ============================================
 
-// 上游API地址（注意：不要有多余空格！）
-const TARGET_API = 'https://api.zhenzhen.work';
+// 平台1：贞贞的 AI 工坊
+const ZHENZHEN_CONFIG = {
+  baseURL: 'https://ai.t8star.cn',
+  key: process.env.ZHENZHEN_API_KEY || 'sk-JgRCJUhqOQGWZFqwmy0yKtrLCzndPdOuXvg7dYJaQe9Zqb7B',
+  name: '贞贞的AI工坊'
+};
 
-// 全局CORS中间件
+// 平台2：SillyDream（海外用户推荐路线）
+const SILLYDREAM_CONFIG = {
+  baseURL: 'https://gossamer.sillydream.top',
+  key: process.env.SILLYDREAM_API_KEY || 'sk-FVio...你的完整Key...',
+  name: 'SillyDream'
+};
+
+// 全局 CORS
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Provider']
 }));
 
-// 解析JSON请求体
-app.use(express.json());
-
-// 创建代理中间件
-const apiProxy = createProxyMiddleware({
-  target: TARGET_API,
-  changeOrigin: true,
-  pathRewrite: {
-    '^/v1': '/v1'
-  },
-  onProxyReq: (proxyReq, req, res) => {
-    // 注入API Key
-    proxyReq.setHeader('Authorization', `Bearer ${API_KEY}`);
-    proxyReq.setHeader('Content-Type', 'application/json');
-    
-    console.log(`[Proxy] ${req.method} ${req.url} -> ${TARGET_API}${req.url}`);
-  },
-  onProxyRes: (proxyRes, req, res) => {
-    console.log(`[Proxy Response] ${proxyRes.statusCode} ${req.url}`);
-  },
-  onError: (err, req, res) => {
-    console.error('[Proxy Error]', err.message);
-    res.status(500).json({ error: 'Proxy error', message: err.message });
+// ============================================
+// 动态代理 - 根据请求参数选择平台
+// ============================================
+app.use('/v1', (req, res, next) => {
+  // 从请求头或查询参数获取选择的平台
+  // 前端可以通过 header: 'X-Provider: sillydream' 传递
+  const provider = req.headers['x-provider'] || req.query.provider || 'zhenzhen';
+  
+  let config;
+  if (provider === 'sillydream') {
+    config = SILLYDREAM_CONFIG;
+  } else {
+    config = ZHENZHEN_CONFIG;
   }
+  
+  console.log(`[${config.name}] ${req.method} ${req.url}`);
+  
+  const proxy = createProxyMiddleware({
+    target: config.baseURL,
+    changeOrigin: true,
+    pathRewrite: { '^/v1': '/v1' },
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('Authorization', `Bearer ${config.key}`);
+      proxyReq.setHeader('Content-Type', 'application/json');
+    },
+    onError: (err, req, res) => {
+      console.error(`[${config.name} Error]`, err.message);
+      res.status(500).json({ error: 'Proxy error', provider: config.name, message: err.message });
+    }
+  });
+  
+  proxy(req, res, next);
 });
-
-// 使用代理中间件 - 关键：使用 app.use 而不是 app.all
-app.use('/v1', apiProxy);
 
 // 健康检查
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    providers: ['zhenzhen', 'sillydream']
+  });
 });
 
-// 生产环境静态文件服务
+// 生产环境静态文件
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../dist')));
-  
-  // 所有其他路由返回index.html（支持前端路由）
   app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../dist/index.html'));
   });
 }
 
-// 启动服务器
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 Proxy target: ${TARGET_API}`);
-  console.log(`🔑 API Key configured: ${API_KEY.substring(0, 10)}...`);
+  console.log(`📡 贞贞 AI: ${ZHENZHEN_CONFIG.baseURL}`);
+  console.log(`📡 SillyDream: ${SILLYDREAM_CONFIG.baseURL}`);
 });

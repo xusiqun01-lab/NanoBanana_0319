@@ -6,9 +6,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, Wand2, AlertCircle } from 'lucide-react';
 import type { TextToImageParams, ImageResolution, ImageRatio } from '@/types';
 import { IMAGE_CONFIG } from '@/config/app.config';
+import { apiConfigService } from '@/services/apiConfig.service'; // ← 添加导入
 
 interface TextToImageFormProps {
-  onSubmit: (params: TextToImageParams) => Promise<void>;
+  onSubmit: (params: TextToImageParams & { provider?: string }) => Promise<void>; // ← 修改类型，支持provider
   isLoading: boolean;
   hasApiConfig: boolean;
 }
@@ -22,11 +23,16 @@ export const TextToImageForm = ({ onSubmit, isLoading, hasApiConfig }: TextToIma
     e.preventDefault();
     if (!prompt.trim()) return;
 
+    // 获取当前激活的API配置（关键修复）
+    const activeConfig = apiConfigService.getActiveConfig('image');
+    console.log('TextToImage using provider:', activeConfig?.providerId); // 调试日志
+
     await onSubmit({
       prompt: prompt.trim(),
       resolution,
       ratio,
-      apiConfigId: 'default',
+      apiConfigId: activeConfig?.id || 'default',
+      provider: activeConfig?.providerId || 'zhenzhen', // ← 关键：传递provider
     });
   };
 

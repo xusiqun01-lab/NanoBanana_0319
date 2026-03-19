@@ -7,10 +7,11 @@ import { Loader2, Wand2, Upload, X, AlertCircle } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import type { ImageToImageParams, ImageResolution, ImageRatio } from '@/types';
 import { IMAGE_CONFIG } from '@/config/app.config';
+import { apiConfigService } from '@/services/apiConfig.service'; // ← 添加导入
 import { fileToBase64, validateFileType, validateFileSize } from '@/utils/helpers';
 
 interface ImageToImageFormProps {
-  onSubmit: (params: ImageToImageParams) => Promise<void>;
+  onSubmit: (params: ImageToImageParams & { provider?: string }) => Promise<void>; // ← 修改类型
   isLoading: boolean;
   hasApiConfig: boolean;
   isMultiImage?: boolean;
@@ -95,12 +96,17 @@ export const ImageToImageForm = ({ onSubmit, isLoading, hasApiConfig }: ImageToI
     const validImages = referenceImages.filter((img): img is string => img !== null);
     if (!prompt.trim() || validImages.length === 0) return;
 
+    // 获取当前激活的API配置（关键修复）
+    const activeConfig = apiConfigService.getActiveConfig('image');
+    console.log('ImageToImage using provider:', activeConfig?.providerId); // 调试日志
+
     await onSubmit({
       prompt: prompt.trim(),
       resolution,
       ratio,
       referenceImages: validImages,
-      apiConfigId: 'default',
+      apiConfigId: activeConfig?.id || 'default',
+      provider: activeConfig?.providerId || 'zhenzhen', // ← 关键：传递provider
       strength,
     });
   };
